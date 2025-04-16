@@ -94,3 +94,20 @@ The analyzer uses Tree-sitter to parse TypeScript files and identify different t
 - **Callback functions**: Functions passed as arguments to other functions
 
 It then checks if each function contains the specified code block. The tool is particularly useful for enforcing coding standards across large codebases.
+
+## Ignoring Functions
+
+You can add a special comment above any function to make the analyzer ignore it:
+
+```typescript
+// @ts-analyzer-ignore
+export function functionToIgnore() {
+    // This function will be ignored by the analyzer
+    // even if it's missing the required code block
+}
+```
+
+This is useful for:
+- Legacy code that can't be immediately updated
+- Functions that legitimately don't need the required code block
+- Special cases where the standard pattern doesn't apply

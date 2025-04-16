@@ -205,10 +205,18 @@ func shouldIgnore(path string, ignorePaths []string) bool {
 
 // Fix the checkExportedFunctions function to properly handle inverted search
 func checkExportedFunctions(rootNode *sitter.Node, content []byte, codeBlock string, isRegex bool, filePath string, invertSearch bool, verbose bool) (bool, int) {
-	// Create query to find exported functions
+	// Create query to find exported functions, including arrow functions and function expressions
 	queryStr := `
 	(export_statement
 		(function_declaration) @func)
+	(export_statement
+		(lexical_declaration
+			(variable_declarator
+				value: (arrow_function) @arrow_func)))
+	(export_statement
+		(lexical_declaration
+			(variable_declarator
+				value: (function_expression) @func_expr)))
 	`
 
 	query, err := sitter.NewQuery([]byte(queryStr), typescript.GetLanguage())
@@ -233,6 +241,16 @@ func checkExportedFunctions(rootNode *sitter.Node, content []byte, codeBlock str
 		for _, capture := range match.Captures {
 			totalFunctions++
 			funcNode := capture.Node
+
+			// Check if the function has an ignore comment
+			if hasIgnoreComment(content, funcNode) {
+				if verbose {
+					fmt.Printf("%s:%d - Skipping function due to @ts-analyzer-ignore comment\n",
+						filePath, funcNode.StartPoint().Row+1)
+				}
+				continue
+			}
+
 			funcContent := string(content[funcNode.StartByte():funcNode.EndByte()])
 
 			if verbose {
@@ -345,6 +363,16 @@ func checkAllFunctions(node *sitter.Node, content []byte, codeBlock string, isRe
 		for _, capture := range match.Captures {
 			foundAnyFunction = true
 			funcNode := capture.Node
+
+			// Check if the function has an ignore comment
+			if hasIgnoreComment(content, funcNode) {
+				if verbose {
+					fmt.Printf("%s:%d - Skipping function due to @ts-analyzer-ignore comment\n",
+						filename, funcNode.StartPoint().Row+1)
+				}
+				continue
+			}
+
 			funcContent := string(content[funcNode.StartByte():funcNode.EndByte()])
 
 			// Check if the code block is properly used
@@ -581,6 +609,15 @@ func checkInternalFunctions(node *sitter.Node, content []byte, codeBlock string,
 			}
 			checkedFunctions[funcKey] = true
 
+			// Check if the function has an ignore comment
+			if hasIgnoreComment(content, funcNode) {
+				if verbose {
+					fmt.Printf("%s:%d - Skipping function due to @ts-analyzer-ignore comment\n",
+						filename, funcNode.StartPoint().Row+1)
+				}
+				continue
+			}
+
 			funcContent := string(content[startByte:funcNode.EndByte()])
 			lineNum := funcNode.StartPoint().Row + 1
 
@@ -657,6 +694,15 @@ func checkCallbackFunctions(node *sitter.Node, content []byte, codeBlock string,
 			}
 			checkedFunctions[funcKey] = true
 
+			// Check if the function has an ignore comment
+			if hasIgnoreComment(content, funcNode) {
+				if verbose {
+					fmt.Printf("%s:%d - Skipping function due to @ts-analyzer-ignore comment\n",
+						filename, funcNode.StartPoint().Row+1)
+				}
+				continue
+			}
+
 			funcContent := string(content[startByte:funcNode.EndByte()])
 			lineNum := funcNode.StartPoint().Row + 1
 
@@ -702,4 +748,22 @@ func isExportedFunction(funcNode *sitter.Node, rootNode *sitter.Node) bool {
 	}
 
 	return false
+}
+
+// Helper function to check if a function has an ignore comment
+func hasIgnoreComment(content []byte, funcNode *sitter.Node) bool {
+	// Get the start line of the function
+	startLine := funcNode.StartPoint().Row
+
+	// If the function is at the first line, there can't be a comment above it
+	if startLine == 0 {
+		return false
+	}
+
+	// Get the content as string and split into lines
+	lines := strings.Split(string(content), "\n")
+
+	// Check the line above the function for the ignore comment
+	prevLine := lines[startLine-1]
+	return strings.Contains(prevLine, "// @ts-analyzer-ignore")
 }
